@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>温湿度IoTダッシュボード</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+    }
+
+    .header, .controls, .chart-container {
+      width: 80%;
+      margin: 10px 0;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: space-around;
+    }
+
+    .btn {
+      width: 400px;
+      height: 50px;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+      border-bottom: 5px solid;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn--wbgt {
+      background-color: #008080;
+      border-bottom-color: #006666;
+    }
+
+    .btn--temperature {
+      background-color: #ff7f50;
+      border-bottom-color: #cc663d;
+    }
+
+    .btn--humidity {
+      background-color: #4169e1;
+      border-bottom-color: #3454b4;
+    }
+
+    .btn--refresh {
+      background-color: #32cd32;
+      border-bottom-color: #228b22;
+      width: 200px;
+    }
+
+    .btn:hover {
+      margin-top: 3px;
+      border-bottom-width: 2px;
+    }
+
+    .btn--shadow {
+      box-shadow: 0 3px 5px rgba(0, 0, 0, .3);
+    }
+
+    .chart-container {
+      height: 700px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    .status {
+      margin-left: 20px;
+      font-style: italic;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>温湿度IoTダッシュボード</h1>
+    <div>
+      <button class="btn btn--refresh btn--shadow" onclick="fetchDataAndUpdateCharts()">更新</button>
+      <span id="lastUpdate" class="status">最終更新: -</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn--wbgt btn--shadow" onclick="showChart('wbgtChart')">WBGT</button>
+    <button class="btn btn--temperature btn--shadow" onclick="showChart('temperatureChart')">温度</button>
+    <button class="btn btn--humidity btn--shadow" onclick="showChart('humidityChart')">湿度</button>
+  </div>
+
+  <div class="chart-container">
+    <canvas id="wbgtChart" style="display: none;"></canvas>
+    <canvas id="temperatureChart" style="display: none;"></canvas>
+    <canvas id="humidityChart" style="display: none;"></canvas>
+  </div>
+
+  <script>
+    // S3のデータファイルURL
+    const dataUrl = 'https://oshiro-esp32-test.s3.ap-northeast-1.amazonaws.com/data.json';
+    
+    // チャートオブジェクトを保持する変数
+    let wbgtChart = null;
+    let temperatureChart = null;
+    let humidityChart = null;
+    
+    // 初期表示でWBGTグラフを表示し、データを取得
+    document.addEventListener('DOMContentLoaded', function() {
+      showChart('wbgtChart');
+      fetchDataAndUpdateCharts();
+      
+      // 30秒ごとにデータを更新（ページ全体のリロードではなく）
+      setInterval(function() {
+        fetchDataAndUpdateCharts();
+      }, 30000);
+    });
+
+    // グラフの表示切替
+    function showChart(chartId) {
+      const charts = ['wbgtChart', 'temperatureChart', 'humidityChart'];
+      charts.forEach(id => {
+        document.getElementById(id).style.display = (id === chartId) ? 'block' : 'none';
+      });
+    }
+
+    // データを取得してグラフを更新
+    function fetchDataAndUpdateCharts() {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', dataUrl, true);
+      
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          if (xhr.status === 200) {
+            try {
+              console.log("取得したデータ:", xhr.responseText); // デバッグ用
+              const jsonData = JSON.parse(xhr.responseText);
+              console.log("パース後のデータ:", jsonData); // デバッグ用
+              
+              // 最終更新時刻を表示
+              const now = new Date();
+              document.getElementById('lastUpdate').textContent = '最終更新: ' + 
+                now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+              
+              // グラフ描画
+              drawCharts(jsonData);
+            } catch (error) {
+              console.error('JSONパースエラー:', error);
+              document.getElementById('lastUpdate').textContent = '最終更新: 失敗 (JSONパースエラー)';
+            }
+          } else {
+            console.error('データ取得エラー:', xhr.status);
+            document.getElementById('lastUpdate').textContent = '最終更新: 失敗 (ステータス: ' + xhr.status + ')';
+          }
+        }
+      };
+      
+      xhr.onerror = function() {
+        console.error('リクエストエラー');
+        document.getElementById('lastUpdate').textContent = '最終更新: 失敗 (リクエストエラー)';
+      };
+      
+      xhr.send();
+    }
+
+    // JSONデータからグラフを描画
+    function drawCharts(jsonData) {
+      // 日時ラベルと各センサ値の抽出
+      // データ形式に合わせてプロパティ名を変更
+      const labels = jsonData.map(entry => {
+        // timestampプロパティを使用し、日時形式を整形
+        const date = new Date(entry.timestamp);
+        return date.toLocaleString('ja-JP', { 
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      });
+      
+      // プロパティ名をS3のデータに合わせて変更
+      const wbgtValues = jsonData.map(entry => entry.wbgt);
+      const temperatureValues = jsonData.map(entry => entry.temperature);
+      const humidityValues = jsonData.map(entry => entry.humidity);
+
+      // 既存のチャートを破棄して再描画
+      if (wbgtChart) wbgtChart.destroy();
+      if (temperatureChart) temperatureChart.destroy();
+      if (humidityChart) humidityChart.destroy();
+
+      // WBGTグラフ
+      wbgtChart = createChart('wbgtChart', 'WBGT', labels, wbgtValues, 'rgba(75, 192, 192, 1)', 'rgba(75, 192, 192, 0.2)', 15, 44);
+      // 温度グラフ
+      temperatureChart = createChart('temperatureChart', '温度', labels, temperatureValues, 'rgba(255, 99, 132, 1)', 'rgba(255, 99, 132, 0.2)', 10, 50);
+      // 湿度グラフ
+      humidityChart = createChart('humidityChart', '湿度', labels, humidityValues, 'rgba(54, 162, 235, 1)', 'rgba(54, 162, 235, 0.2)', 0, 100);
+    }
+
+    // 汎用グラフ作成関数
+    function createChart(canvasId, label, labels, dataValues, borderColor, backgroundColor, yMin, yMax) {
+      const data = {
+        labels: labels,
+        datasets: [{
+          label: label,
+          data: dataValues,
+          borderColor: borderColor,
+          backgroundColor: backgroundColor,
+          fill: false,
+        }]
+      };
+
+      const config = {
+        type: 'line',
+        data: data,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              display: true,
+              title: {
+                display: true,
+                text: '日時'
+              }
+            },
+            y: {
+              display: true,
+              title: {
+                display: true,
+                text: label + '値'
+              },
+              beginAtZero: true,
+              min: yMin,
+              max: yMax
+            }
+          }
+        }
+      };
+
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      return new Chart(ctx, config);
+    }
+  </script>
+</body>
+</html>
