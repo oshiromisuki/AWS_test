@@ -114,7 +114,6 @@
   <script>
     // S3のデータファイルURL
     const dataUrl = 'https://oshiro-esp32-test.s3.ap-northeast-1.amazonaws.com/data.json';
-    
     // チャートオブジェクトを保持する変数
     let wbgtChart = null;
     let temperatureChart = null;
@@ -125,10 +124,10 @@
       showChart('wbgtChart');
       fetchDataAndUpdateCharts();
       
-      // 30秒ごとにデータを更新（ページ全体のリロードではなく）
+      // 1分（60000ミリ秒）ごとにデータを更新
       setInterval(function() {
         fetchDataAndUpdateCharts();
-      }, 30000);
+      }, 60000);
     });
 
     // グラフの表示切替
@@ -141,8 +140,16 @@
 
     // データを取得してグラフを更新
     function fetchDataAndUpdateCharts() {
+      // キャッシュを防ぐためにタイムスタンプパラメータを追加
+      const nocacheUrl = dataUrl + '?_=' + new Date().getTime();
+      
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', dataUrl, true);
+      xhr.open('GET', nocacheUrl, true);
+      
+      // キャッシュを無効化するヘッダーを設定
+      xhr.setRequestHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      xhr.setRequestHeader('Pragma', 'no-cache');
+      xhr.setRequestHeader('Expires', '0');
       
       xhr.onreadystatechange = function() {
         if (xhr.readyState === 4) {
@@ -151,6 +158,7 @@
               console.log("取得したデータ:", xhr.responseText); // デバッグ用
               const jsonData = JSON.parse(xhr.responseText);
               console.log("パース後のデータ:", jsonData); // デバッグ用
+              console.log("データ件数:", jsonData.length); // 件数を確認
               
               // 最終更新時刻を表示
               const now = new Date();
@@ -180,23 +188,26 @@
 
     // JSONデータからグラフを描画
     function drawCharts(jsonData) {
+      // 直近の30レコードだけを使用
+      const recentData = jsonData.slice(-30);
+      
       // 日時ラベルと各センサ値の抽出
-      // データ形式に合わせてプロパティ名を変更
-      const labels = jsonData.map(entry => {
+      const labels = recentData.map(entry => {
         // timestampプロパティを使用し、日時形式を整形
         const date = new Date(entry.timestamp);
         return date.toLocaleString('ja-JP', { 
           month: '2-digit',
           day: '2-digit',
           hour: '2-digit',
-          minute: '2-digit'
+          minute: '2-digit',
+          second: '2-digit'
         });
       });
       
       // プロパティ名をS3のデータに合わせて変更
-      const wbgtValues = jsonData.map(entry => entry.wbgt);
-      const temperatureValues = jsonData.map(entry => entry.temperature);
-      const humidityValues = jsonData.map(entry => entry.humidity);
+      const wbgtValues = recentData.map(entry => entry.wbgt);
+      const temperatureValues = recentData.map(entry => entry.temperature);
+      const humidityValues = recentData.map(entry => entry.humidity);
 
       // 既存のチャートを破棄して再描画
       if (wbgtChart) wbgtChart.destroy();
@@ -221,6 +232,7 @@
           borderColor: borderColor,
           backgroundColor: backgroundColor,
           fill: false,
+          tension: 0.1 // 線を少し滑らかにする
         }]
       };
 
@@ -230,12 +242,29 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+            },
+            legend: {
+              position: 'top',
+            },
+            title: {
+              display: true,
+              text: label + 'の推移'
+            }
+          },
           scales: {
             x: {
               display: true,
               title: {
                 display: true,
                 text: '日時'
+              },
+              ticks: {
+                maxRotation: 45, // ラベルを45度回転させて見やすくする
+                minRotation: 45
               }
             },
             y: {
@@ -244,9 +273,9 @@
                 display: true,
                 text: label + '値'
               },
-              beginAtZero: true,
-              min: yMin,
-              max: yMax
+              beginAtZero: false, // データの最小値に合わせる
+              suggestedMin: yMin,
+              suggestedMax: yMax
             }
           }
         }
