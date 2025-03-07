@@ -254,10 +254,7 @@
               display: true,
               text: label + 'の推移'
             }
-          },
-          scales: {
-            x: {
-              display: true,
+          },n
               title: {
                 display: true,
                 text: '日時'
@@ -273,9 +270,11 @@
                 display: true,
                 text: label + '値'
               },
-              beginAtZero: false, // データの最小値に合わせる
-              suggestedMin: yMin,
-              suggestedMax: yMax
+              min: yMin, // 最小値を固定
+              max: yMax, // 最大値を固定
+              ticks: {
+                stepSize: 1 // 1メモリ刻みに設定
+              }
             }
           }
         }
